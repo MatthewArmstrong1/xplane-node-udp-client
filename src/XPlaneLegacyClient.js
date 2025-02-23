@@ -51,23 +51,15 @@ module.exports = class XPlaneClient {
     });
   }
 
-  requestDataRef(
-    dataRef,
-    timesPerSecond,
-    callback = undefined,
-  ) {
+  requestDataRef(dataRef, timesPerSecond, callback = undefined) {
     let index = this.dataRefs.length;
 
-    // TODO: This prototype needs more work to better maintain
-    // what datarefs are being monitored, but the basics work.
-
-    for (let i = 0; i < this.dataRefs.length; i += 1) {
+    // Check if dataref is already being monitored
+    for (let i = 0; i < this.dataRefs.length; i++) {
       if (this.dataRefs[i].dataRef === dataRef) {
         index = i;
         if (this.debug) {
-          console.log(
-            `found and using existing dataref ${dataRef} on index ${index}`,
-          );
+          console.log(`Using existing dataref ${dataRef} at index ${index}`);
         }
       }
     }
@@ -79,8 +71,18 @@ module.exports = class XPlaneClient {
       value: null,
     };
 
-    const buffer = Buffer.alloc(5 + 4 + 4 + 400);
-    buffer.write('RREF', 0, 4);
+    // Calculate buffer size dynamically based on dataRef length
+    const maxDataRefLength = 400; // X-Plane max length
+    const dataRefBuffer = Buffer.from(dataRef, 'utf8');
+
+    if (dataRefBuffer.length > maxDataRefLength) {
+      console.warn(`DataRef exceeds max length and will be truncated: ${dataRef}`);
+    }
+
+    // Create buffer (5 bytes header + 8 bytes index/freq + DataRef string + null terminator)
+    const buffer = Buffer.alloc(5 + 4 + 4 + maxDataRefLength);
+    buffer.write('RREF', 0, 4); // Write header
+
     if (BIG_ENDIAN) {
       buffer.writeInt32BE(timesPerSecond, 5); // dref_freq
       buffer.writeInt32BE(index, 9); // drefSenderIndex
@@ -88,7 +90,10 @@ module.exports = class XPlaneClient {
       buffer.writeInt32LE(timesPerSecond, 5); // dref_freq
       buffer.writeInt32LE(index, 9); // drefSenderIndex
     }
-    buffer.write(dataRef, 13);
+
+    // Write DataRef string and ensure null termination
+    dataRefBuffer.copy(buffer, 13, 0, Math.min(dataRefBuffer.length, maxDataRefLength - 1));
+    buffer[13 + Math.min(dataRefBuffer.length, maxDataRefLength - 1)] = 0; // Null terminator
 
     this._sendBuffer(buffer);
   }
@@ -182,8 +187,7 @@ module.exports = class XPlaneClient {
             if (dataRef.value !== drefFltValue) {
               if (this.debug) {
                 console.log(
-                  `[${i + 1}/${numrefs}] new value for dataRef ${
-                    dataRef.dataRef
+                  `[${i + 1}/${numrefs}] new value for dataRef ${dataRef.dataRef
                   } is ${drefFltValue}`,
                 );
               }
@@ -198,8 +202,7 @@ module.exports = class XPlaneClient {
             }
           } else if (this.debug) {
             console.log(
-              `[${
-                i + 1
+              `[${i + 1
               }/${numrefs}] value for unknown RREF index ${drefSenderIndex} is ${drefFltValue} (there must be a bug in the code somewhere!)`,
             );
           }
