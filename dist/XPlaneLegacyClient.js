@@ -166,7 +166,6 @@ module.exports = class XPlaneClient {
 
   initConnection() {
     const self = this
-    self.debug = false
 
     if (client === null) {
       client = dgram.createSocket('udp4')
